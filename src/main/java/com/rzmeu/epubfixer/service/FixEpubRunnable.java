@@ -1,6 +1,7 @@
 package com.rzmeu.epubfixer.service;
 
-import org.apache.commons.lang3.RegExUtils;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -8,11 +9,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.List;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -20,15 +18,10 @@ import java.util.zip.ZipOutputStream;
 public class FixEpubRunnable implements Runnable {
     private final Path directory;
     private final String fileName;
-    private List<Pattern> regexPatternList = new ArrayList<>();
 
     public FixEpubRunnable(Path directory, String fileName) {
         this.directory = directory;
         this.fileName = fileName;
-
-        regexPatternList.add(Pattern.compile("<style type=\\\"text\\/css\\\">[\\n@a-z ()-:\\{\\};]*<\\/style>"));
-        regexPatternList.add(Pattern.compile("<div[A-Za-z =\"\\/>\\n@()-:\\{;\\}#<]*<\\/a><\\/div><br \\/><\\/div>"));
-        regexPatternList.add(Pattern.compile("<p[A-Za-z =\"\\/>\\n@()-:\\{;\\}#<_]*<strong>[A-Za-z =\"\\/>\\n@()-:\\{;\\}#<_]*?<\\/p>"));
     }
 
     @Override
@@ -130,11 +123,13 @@ public class FixEpubRunnable implements Runnable {
     }
 
     private String fixEpubHtml(String text) {
-        for (int i = 0; i < regexPatternList.size(); i++) {
-            text = RegExUtils.removeAll(text, regexPatternList.get(i));
-        }
+        Document doc = Jsoup.parse(text);
 
-        return text;
+        doc.select("style").remove();
+        doc.select("div.skiptranslate").remove();
+        doc.select("div:has(> div[style*='color: #f8f9fa;'])").remove();
+
+        return doc.html();
     }
 
     private boolean isEpubPage(String fileName) {
