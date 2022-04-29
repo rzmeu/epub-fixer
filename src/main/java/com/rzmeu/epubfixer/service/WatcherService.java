@@ -2,6 +2,7 @@ package com.rzmeu.epubfixer.service;
 
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.HashMap;
@@ -15,7 +16,13 @@ public class WatcherService {
     public void start() throws IOException, InterruptedException {
         WatchService watchService = FileSystems.getDefault().newWatchService();
 
-        Path path = Paths.get("C:\\watch");
+        File watchDirectory = new File("watch");
+
+        if(!watchDirectory.exists()) {
+            watchDirectory.mkdir();
+        }
+
+        Path path = watchDirectory.toPath();
         WatchKey watchKey = path.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);
         keys.put(watchKey, path);
 
