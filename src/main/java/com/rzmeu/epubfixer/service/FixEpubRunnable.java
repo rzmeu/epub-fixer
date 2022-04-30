@@ -59,7 +59,7 @@ public class FixEpubRunnable implements Runnable {
             long endTimestamp = Instant.now().toEpochMilli();
             System.out.println("Epub file: " + newFileName + " fixed in " + (endTimestamp -startTimestamp)/1000 + " seconds");
         } catch (IOException e) {
-            throw new RuntimeException("Cannot move file");
+            throw new RuntimeException("Cannot move file", e);
         }
     }
 
@@ -101,7 +101,7 @@ public class FixEpubRunnable implements Runnable {
             ZipEntry entryIn = (ZipEntry) e.nextElement();
 
             if (!isEpubPage(entryIn.getName())) {
-                fixedZipOutputStream.putNextEntry(entryIn);
+                fixedZipOutputStream.putNextEntry(new ZipEntry(entryIn.getName()));
                 InputStream is = originalZip.getInputStream(entryIn);
                 byte[] buf = new byte[1024];
                 int len;
