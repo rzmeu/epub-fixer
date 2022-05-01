@@ -1,7 +1,9 @@
 package com.rzmeu.epubfixer.service;
 
+import com.rzmeu.epubfixer.config.Properties;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.springframework.util.FileSystemUtils;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -15,65 +17,42 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-public class FixEpubRunnable implements Runnable {
-    private final Path directory;
-    private final String fileName;
+public record FixEpubRunnable(Properties properties, String source, String fileName) implements Runnable {
 
-    public FixEpubRunnable(Path directory, String fileName) {
-        this.directory = directory;
-        this.fileName = fileName;
-    }
+    private static final String EPUB_EXTENSION = ".epub";
+    public static final String FIXED_EPUB_EXTENSION = "-fixed.epub";
 
     @Override
     public void run() {
-        if(!fileName.endsWith(".epub")) {
+        if (!fileName.endsWith(EPUB_EXTENSION)) {
             return;
         }
 
-        System.out.println("New file: " + fileName + ", at path: " + directory.toString());
+        System.out.println("Started processing : " + fileName);
         long startTimestamp = Instant.now().toEpochMilli();
 
-        initCommonDirectories();
+        String newFileName = fileName.replace(EPUB_EXTENSION, FIXED_EPUB_EXTENSION);
 
-        String tempFolder = UUID.randomUUID().toString();
-        boolean tempDirectoryCreated = new File(directory.toString(), tempFolder).mkdir();
+        Path tempPath = new File(UUID.randomUUID().toString()).toPath();
+        Path sourcePath = new File(properties.getBaseDirectory()).toPath().resolve(source);
+        Path completePath = new File(properties.getCompleteDirectory()).toPath();
+        Path filePath = sourcePath.resolve(fileName);
 
-        if (!tempDirectoryCreated) {
-            throw new RuntimeException("Directory not created");
-        }
+        tempPath.toFile().mkdir();
 
         try {
-            Path filePath = directory.resolve(fileName);
             waitUntilLockReleased(filePath.toFile());
-            Files.move(directory.resolve(fileName), directory.resolve(tempFolder).resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(filePath, tempPath.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
+            fixEpubFile(tempPath, fileName, newFileName);
 
-            String newFileName = fileName.replace(".epub", "-fixed.epub");
-            Path tempDirectory = directory.resolve(tempFolder);
-
-            fixEpubFile(tempDirectory, fileName, newFileName);
-
-            Files.move(tempDirectory.resolve(fileName), directory.resolve("processed").resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
-            Files.move(tempDirectory.resolve(newFileName), directory.resolve("fixed").resolve(newFileName), StandardCopyOption.REPLACE_EXISTING);
-            Files.delete(tempDirectory);
-
-            long endTimestamp = Instant.now().toEpochMilli();
-            System.out.println("Epub file: " + newFileName + " fixed in " + (endTimestamp -startTimestamp)/1000 + " seconds");
+            Files.move(tempPath.resolve(newFileName), completePath.resolve(newFileName).toAbsolutePath(), StandardCopyOption.REPLACE_EXISTING);
+            FileSystemUtils.deleteRecursively(tempPath);
         } catch (IOException e) {
             throw new RuntimeException("Cannot move file", e);
         }
-    }
 
-    private void initCommonDirectories() {
-        File processedDirectory = new File(directory.toString(), "processed");
-        File fixedDirectory = new File(directory.toString(), "fixed");
-
-        if(!processedDirectory.exists()) {
-            processedDirectory.mkdir();
-        }
-
-        if(!fixedDirectory.exists()) {
-            fixedDirectory.mkdir();
-        }
+        long endTimestamp = Instant.now().toEpochMilli();
+        System.out.println("Processing finished: " + newFileName + " in " + (endTimestamp - startTimestamp) / 1000 + " seconds");
     }
 
     private void waitUntilLockReleased(File file) {
@@ -97,7 +76,7 @@ public class FixEpubRunnable implements Runnable {
         ZipFile originalZip = new ZipFile(folderPath.resolve(fileName).toFile());
         final ZipOutputStream fixedZipOutputStream = new ZipOutputStream(new FileOutputStream(folderPath.resolve(newFileName).toFile()));
 
-        for(Enumeration e = originalZip.entries(); e.hasMoreElements();) {
+        for (Enumeration e = originalZip.entries(); e.hasMoreElements(); ) {
             ZipEntry entryIn = (ZipEntry) e.nextElement();
 
             if (!isEpubPage(entryIn.getName())) {
@@ -105,7 +84,7 @@ public class FixEpubRunnable implements Runnable {
                 InputStream is = originalZip.getInputStream(entryIn);
                 byte[] buf = new byte[1024];
                 int len;
-                while((len = is.read(buf)) > 0) {
+                while ((len = is.read(buf)) > 0) {
                     fixedZipOutputStream.write(buf, 0, len);
                 }
             } else {
@@ -116,7 +95,8 @@ public class FixEpubRunnable implements Runnable {
 
                 fixedZipOutputStream.write(text.getBytes());
             }
-            fixedZipOutputStream.closeEntry();;
+            fixedZipOutputStream.closeEntry();
+            ;
         }
         fixedZipOutputStream.close();
         originalZip.close();
@@ -125,14 +105,12 @@ public class FixEpubRunnable implements Runnable {
     private String fixEpubHtml(String text) {
         Document doc = Jsoup.parse(text);
 
-        doc.select("style").remove();
-        doc.select("div.skiptranslate").remove();
-        doc.select("div:has(> div[style*='color: #f8f9fa;'])").remove();
+        properties.getSources().get(source).getSelectors().forEach(selector -> doc.select(selector).remove());
 
         return doc.html();
     }
 
     private boolean isEpubPage(String fileName) {
-        return fileName.startsWith("OEBPS/Text/") && fileName.endsWith(".xhtml");
+        return fileName.startsWith("OEBPS/Text/") && fileName.endsWith("html");
     }
 }
