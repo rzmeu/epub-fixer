@@ -57,7 +57,7 @@ public record FixEpubRunnable(Properties properties, String source, String fileN
 
     private void waitUntilLockReleased(File file) {
         int tryNumber = 0;
-        int waitUntilNextTry = 100;
+        int waitUntilNextTry = 1000;
 
         while (tryNumber < 10) {
             try {
